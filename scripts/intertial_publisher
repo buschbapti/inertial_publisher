@@ -1,0 +1,54 @@
+#!/usr/bin/env python
+import rospy
+import tf
+import liblo
+import sys
+
+
+class InertialPublisher(object):
+    def __init__(self, prefix="human"):
+        self.tfb = tf.TransformBroadcaster()
+        rospy.sleep(1)
+        try:
+            self.server = liblo.Server(12345)
+        except liblo.ServerError as err:
+            print(err)
+            sys.exit()
+
+        # register method taking an string a 4 floats
+        self.server.add_method("/IMU", 'sffff', self.quaterion_callback)
+
+        self.fake_pos = {}
+        self.fake_pos['base'] = [1, 1, 1]
+        self.fake_pos['right_elbow'] = [1.5, 1.5, 1.5]
+        self.prefix = prefix
+
+        self.frame_pose = [[0, 0, 0], [0, 0, 0, 1]]
+
+    def quaterion_callback(self, path, args, types, src):
+        source = args[0]
+        quaternion = args[1:]
+        # format x y z w
+        self.tfb.sendTransform(self.fake_pos[source], quaternion, rospy.Time.now(),
+                               '/inertial/' + self.prefix + '/' + source, '/inertial_frame')
+
+    # def qualib_callback(path, args, types, src):
+    #     source = args[0]
+    #     qualib = args[1:]
+
+    def fallback(self, path, args, types, src):
+        print("got unknown message '%s' from '%s'" % (path, src.url))
+        for a, t in zip(args, types):
+            print("argument of type '%s': %s" % (t, a))
+
+    def run(self):
+        while not rospy.is_shutdown():
+            self.server.recv(100)
+            self.tfb.sendTransform(self.frame_pose[0], self.frame_pose[1], rospy.Time.now(),
+                                   '/inertial_frame', '/base')
+
+
+if __name__ == '__main__':
+    rospy.init_node('inertial_publisher')
+    pub = InertialPublisher()
+    pub.run()
